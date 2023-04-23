@@ -3,20 +3,20 @@ use axum::extract::TypedHeader;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
-use futures::stream::SplitSink;
+use futures::stream::{SplitSink, SplitStream};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Result, Value};
 
-use std::borrow::Cow;
 use std::net::SocketAddr;
 use std::ops::ControlFlow;
 
 //allows to extract the IP of connecting user
 use axum::extract::connect_info::ConnectInfo;
-use axum::extract::ws::CloseFrame;
 
 //allows to split the websocket stream into separate TX and RX branches
 use futures::{sink::SinkExt, stream::StreamExt};
+
+mod mongo;
 
 #[derive(Serialize, Deserialize)]
 struct Person {}
@@ -62,21 +62,6 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
     // By splitting socket we can send and receive at the same time.
     let (mut sender, mut receiver) = socket.split();
 
-    // Spawn a task that will push several messages to the client (does not matter what client does)
-    let mut send_task = tokio::spawn(async move {
-        println!("Sending close to {who}...");
-        if let Err(e) = sender
-            .send(Message::Close(Some(CloseFrame {
-                code: axum::extract::ws::close_code::NORMAL,
-                reason: Cow::from("Goodbye"),
-            })))
-            .await
-        {
-            println!("Could not send Close due to {}, probably it is ok?", e);
-        }
-        1
-    });
-
     // This second task will receive messages from client and print them on server console
     let mut recv_task = tokio::spawn(async move {
         let mut cnt = 0;
@@ -86,7 +71,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
                     Some(Ok(msg)) = receiver.next() => {
                                 cnt += 1;
                                 // print message and break if instructed to do so
-                                if process_message(msg, who).is_break() {
+                                if process_message(msg, who, &mut sender, &mut receiver).await.is_break() {
                                     return cnt;
                                 }
                             },
@@ -97,12 +82,6 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
 
     // If any one of the tasks exit, abort the other.
     tokio::select! {
-        rv_a = (&mut send_task) => {
-            match rv_a {
-                Ok(a) => println!("{} messages sent to {}", a, who),
-                Err(a) => println!("Error sending messages {:?}", a)
-            }
-        },
         rv_b = (&mut recv_task) => {
             match rv_b {
                 Ok(b) => println!("Received {} messages", b),
@@ -113,29 +92,34 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
 }
 
 /// helper to print contents of messages to stdout. Has special treatment for Close.
-fn process_message(
+async fn process_message(
     msg: Message,
     who: SocketAddr,
-    // sender: SplitSink<WebSocket, Message>,
+    sender: &mut SplitSink<WebSocket, Message>,
+    receiver: &mut SplitStream<WebSocket>,
 ) -> ControlFlow<(), ()> {
     match msg {
         Message::Text(t) => {
+            if t.trim() == "ping" {
+                if let Err(e) = sender.send(Message::Text("pong".into())).await {
+                    println!("Send message failed {:?}", e);
+                }
+                return ControlFlow::Continue(());
+            }
+
             // Parse the string of data into serde_json::Value.
             let v: Value = serde_json::from_str(&t).unwrap();
             // Access parts of the data by indexing with square brackets.
-            println!(
-                "Please call {} at the number {}",
-                v["method"], v["phones"][0]
-            );
+            println!("Please call {} at the number {}", v["method"], v["phones"][0]);
             if v["method"] == "registerDevice" {
                 let params: Person = serde_json::from_value(v).unwrap();
             }
 
             println!(">>> {} sent str: {:?}", who, t);
-        }
+        },
         _ => {
             println!("Not allowed message");
-        }
+        },
     }
     ControlFlow::Continue(())
 }
