@@ -355,6 +355,7 @@ dependencies = [
  "anyhow",
  "axum",
  "axum-extra",
+ "bson",
  "futures",
  "futures-util",
  "headers",

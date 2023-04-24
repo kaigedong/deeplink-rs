@@ -14,8 +14,9 @@ use axum::extract::connect_info::ConnectInfo;
 use futures::{sink::SinkExt, stream::StreamExt};
 
 use crate::types::{
-    RegisterDeviceParams, RegisterDeviceResult, ResponseParams, UserId, UserNonceResult,
+    DeviceInfo, RegisterDeviceParams, RegisterDeviceResult, ResponseParams, UserId, UserNonceResult,
 };
+use crate::utils;
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -156,8 +157,19 @@ async fn process_message(
                     id: v["id"].as_u64().unwrap(),
                     method: v["method"].as_str().unwrap().to_owned(),
                     code: 0,
-                    result: &RegisterDeviceResult { device_id },
+                    result: &RegisterDeviceResult { device_id: device_id.clone() },
                 })
+                .unwrap();
+
+                db.update_device(DeviceInfo {
+                    device_id,
+                    device_name: params.device_name,
+                    mac: params.mac,
+                    online: true,
+                    add_time: utils::now(),
+                    ..Default::default()
+                })
+                .await
                 .unwrap();
 
                 sender.send(Message::Text(result)).await.unwrap();

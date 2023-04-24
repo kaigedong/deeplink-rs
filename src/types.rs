@@ -19,10 +19,14 @@ pub struct RegisterDeviceResult {
     pub device_id: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct DeviceInfo {
     pub device_id: String,
+    pub device_name: String,
     pub mac: String,
+    pub online: bool,
+    pub add_time: String,
+    pub update_time: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -10,7 +10,10 @@ use anyhow::anyhow;
 use futures::stream::TryStreamExt;
 use mongodb::options::FindOptions;
 
-use crate::types::{DeviceInfo, UserNonce};
+use crate::{
+    types::{DeviceInfo, UserNonce},
+    utils,
+};
 
 #[derive(Clone, Debug)]
 pub struct DB {
@@ -36,6 +39,23 @@ impl DB {
             )
             .await
             .map_err(|e| anyhow!(e))
+    }
+
+    pub async fn update_device(&self, mut device_info: DeviceInfo) -> anyhow::Result<()> {
+        // Get a handle to a collection of `Book`.
+        let typed_collection = self.client.database("test").collection::<DeviceInfo>("device");
+
+        device_info.update_time = utils::now();
+
+        typed_collection
+            .update_one(
+                doc! {"device_id": device_info.device_id.clone()},
+                doc! {"$set":bson::to_bson(&device_info).unwrap()},
+                None,
+            )
+            .await?;
+
+        return Ok(());
     }
 
     pub async fn get_nonce(&self, user_id: &str) -> Result<u64, anyhow::Error> {

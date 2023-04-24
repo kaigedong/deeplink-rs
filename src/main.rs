@@ -9,6 +9,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 mod handlers;
 mod mongo;
 mod types;
+mod utils;
 
 #[tokio::main]
 async fn main() {
