@@ -125,11 +125,12 @@ async fn process_message(
                         return ControlFlow::Continue(());
                     }
                 };
+
                 // 获取nonce
                 let nonce = db.get_nonce(&params.user_id).await.unwrap();
-                let mut result = serde_json::to_string(&ResponseParams {
+                let result = serde_json::to_string(&ResponseParams {
                     id: v["id"].as_u64().unwrap(),
-                    method: v["method"].to_string(),
+                    method: v["method"].as_str().unwrap().to_owned(),
                     code: 0,
                     result: &UserNonceResult {
                         nonce: nonce.to_string(),
