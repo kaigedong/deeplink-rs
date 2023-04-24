@@ -1,8 +1,8 @@
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::TypedHeader;
+use axum::extract::{State, TypedHeader};
 use axum::response::IntoResponse;
 use futures::stream::{SplitSink, SplitStream};
-use serde_json::{json, Result, Value};
+use serde_json::{json, Value};
 
 use std::net::SocketAddr;
 use std::ops::ControlFlow;
@@ -13,10 +13,13 @@ use axum::extract::connect_info::ConnectInfo;
 //allows to split the websocket stream into separate TX and RX branches
 use futures::{sink::SinkExt, stream::StreamExt};
 
+use crate::types::{RequestMethod, ResponseParams, UserId, UserNonceResult};
+
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     user_agent: Option<TypedHeader<headers::UserAgent>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(db): State<crate::mongo::DB>,
 ) -> impl IntoResponse {
     let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
         user_agent.to_string()
@@ -27,10 +30,10 @@ pub async fn ws_handler(
 
     // finalize the upgrade process by returning upgrade callback.
     // we can customize the callback by sending additional info such as address.
-    ws.on_upgrade(move |socket| handle_socket(socket, addr))
+    ws.on_upgrade(move |socket| handle_socket(socket, addr, db))
 }
 
-async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
+async fn handle_socket(mut socket: WebSocket, who: SocketAddr, client: crate::mongo::DB) {
     //send a ping (unsupported by some browsers) just to kick things off and get a response
     if socket.send(Message::Ping(vec![1, 2, 3])).await.is_ok() {
         println!("Pinged {}...", who);
@@ -44,19 +47,32 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
     // By splitting socket we can send and receive at the same time.
     let (mut sender, mut receiver) = socket.split();
 
+    println!("###### Hook1");
+
     // This second task will receive messages from client and print them on server console
     let mut recv_task = tokio::spawn(async move {
+        println!("###### Hook2");
         let mut cnt = 0;
-        // TODO: 需要将这里写一个select，根据事件先后来处理
         loop {
             tokio::select! {
-                    Some(Ok(msg)) = receiver.next() => {
+                    result = receiver.next() => {
+                        match result {
+                            Some(Ok(msg)) =>  {
                                 cnt += 1;
                                 // print message and break if instructed to do so
-                                if process_message(msg, who, &mut sender, &mut receiver).await.is_break() {
+                                if process_message(msg, who, &mut sender, &mut receiver, &client).await.is_break() {
                                     return cnt;
                                 }
                             },
+                            Some(Err(e)) => {
+                                println!("### receive next Err: {:?}",e)
+                            },
+                            None => {
+                                println!("### receive None");
+                                break cnt
+                            }
+                        }
+                    },
                 // 添加TODO: 加一个管道，当管道中有数据时，读取数据并处理
             }
         }
@@ -78,34 +94,66 @@ async fn process_message(
     msg: Message,
     who: SocketAddr,
     sender: &mut SplitSink<WebSocket, Message>,
-    receiver: &mut SplitStream<WebSocket>,
+    _receiver: &mut SplitStream<WebSocket>,
+    db: &crate::mongo::DB,
 ) -> ControlFlow<(), ()> {
     match msg {
         Message::Text(t) => {
-            if t.trim() == "ping" {
+            let t = t.trim();
+            if t == "ping" {
                 if let Err(e) = sender.send(Message::Text("pong".into())).await {
                     println!("Send message failed {:?}", e);
                 }
                 return ControlFlow::Continue(());
             }
 
-            // Parse the string of data into serde_json::Value.
-            let v: Value = serde_json::from_str(&t).unwrap();
-            // Access parts of the data by indexing with square brackets.
-            println!(
-                "Please call {} at the number {}",
-                v["method"], v["phones"][0]
-            );
+            let v: Value = match serde_json::from_str(&t) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("### Unmarshal json failed: {:?}", e);
+                    return ControlFlow::Continue(());
+                }
+            };
+
             // {"id": 1,"method": "getNonce","token": "",
             // "params": {"user_id": "5Ebm13cUeSEFyAfC3oSwZaVuXKodbd79W8FHbXaPiG458hfJ"}}
             if v["method"] == "getNonce" {
-                let params: crate::types::UserId = serde_json::from_value(v).unwrap();
+                let params: UserId = match serde_json::from_value(v["params"].clone()) {
+                    Ok(params) => params,
+                    Err(e) => {
+                        println!("Unmarshal failed: {:?}", e);
+                        return ControlFlow::Continue(());
+                    }
+                };
+                // 获取nonce
+                let nonce = db.get_nonce(&params.user_id).await.unwrap();
+                let mut result = serde_json::to_string(&ResponseParams {
+                    id: v["id"].as_u64().unwrap(),
+                    method: v["method"].to_string(),
+                    code: 0,
+                    result: &UserNonceResult {
+                        nonce: nonce.to_string(),
+                    },
+                })
+                .unwrap();
+
+                sender.send(Message::Text(result)).await.unwrap();
+
+                // // 更新nonce
+                // if let Err(e) = db.update_nonce(&params.user_id, nonce + 1).await {
+                //     println!("##### update failed {:?}", e);
+                // };
+                // let nonce = db.get_nonce(&params.user_id).await.unwrap();
+                // sender
+                //     .send(Message::Text((nonce + 1).to_string()))
+                //     .await
+                //     .unwrap();
             }
 
             println!(">>> {} sent str: {:?}", who, t);
         }
         _ => {
-            println!("Not allowed message");
+            println!("Not allowed message {:?}", msg);
         }
     }
     ControlFlow::Continue(())

@@ -1,8 +1,64 @@
 use mongodb::{
     bson::doc,
     options::{ClientOptions, ServerApi, ServerApiVersion},
-    Client,
+    results::{InsertOneResult, UpdateResult},
+    Client, Collection,
 };
+// This trait is required to use `try_next()` on the cursor
+use anyhow::anyhow;
+use futures::stream::{Collect, TryStreamExt};
+use mongodb::options::FindOptions;
+
+use crate::types::UserNonce;
+
+#[derive(Clone, Debug)]
+pub struct DB {
+    pub client: Client,
+}
+
+impl DB {
+    pub async fn new() -> Self {
+        DB {
+            client: init_mongo().await.unwrap(),
+        }
+    }
+
+    pub async fn update_nonce(
+        &self,
+        user_id: &str,
+        nonce: u64,
+    ) -> anyhow::Result<UpdateResult, anyhow::Error> {
+        let collection: Collection<UserNonce> = self.client.database("test").collection("nonce");
+        collection
+            .update_one(
+                doc! {"user_id":user_id},
+                doc! {"$set": { "user_id": user_id, "nonce": nonce.to_string() }},
+                None,
+            )
+            .await
+            .map_err(|e| anyhow!(e))
+    }
+
+    pub async fn get_nonce(&self, user_id: &str) -> Result<u64, anyhow::Error> {
+        // Get a handle to a collection of `Book`.
+        let typed_collection = self
+            .client
+            .database("test")
+            .collection::<UserNonce>("nonce");
+
+        // Query the books in the collection with a filter and an option.
+        let filter = doc! { "user_id": user_id };
+        let find_options = FindOptions::builder().sort(doc! { "title": 1 }).build();
+        let mut cursor = typed_collection.find(filter, find_options).await?;
+
+        // Iterate over the results of the cursor.
+        while let Some(nonce) = cursor.try_next().await? {
+            return Ok(nonce.nonce.parse::<u64>()?);
+            // println!("title: {}", book.title);
+        }
+        return Ok(0);
+    }
+}
 
 pub async fn init_mongo() -> mongodb::error::Result<Client> {
     let uri = "mongodb://bobo:boboPassword@localhost:27017/";
