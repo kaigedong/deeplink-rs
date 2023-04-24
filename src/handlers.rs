@@ -161,16 +161,19 @@ async fn process_message(
                 })
                 .unwrap();
 
-                db.update_device(DeviceInfo {
-                    device_id,
-                    device_name: params.device_name,
-                    mac: params.mac,
-                    online: true,
-                    add_time: utils::now(),
-                    ..Default::default()
-                })
-                .await
-                .unwrap();
+                if let Err(_) = db
+                    .update_device(DeviceInfo {
+                        device_id,
+                        device_name: params.device_name,
+                        mac: params.mac,
+                        online: true,
+                        add_time: utils::now(),
+                        ..Default::default()
+                    })
+                    .await
+                {
+                    println!("######### update device failed")
+                };
 
                 sender.send(Message::Text(result)).await.unwrap();
             }
