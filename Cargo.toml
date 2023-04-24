@@ -22,13 +22,5 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [[bin]]
-name = "example-server"
-path = "src/server.rs"
-
-[[bin]]
-name = "example-client"
-path = "src/client.rs"
-
-[[bin]]
 name = "deeplink-server"
 path = "src/main.rs"
