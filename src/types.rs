@@ -3,9 +3,26 @@ use std::fmt::Debug;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UserId {
     pub user_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterDeviceParams {
+    pub device_name: String,
+    pub mac: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterDeviceResult {
+    pub device_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceInfo {
+    pub device_id: String,
+    pub mac: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

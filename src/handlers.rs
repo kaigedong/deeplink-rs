@@ -13,7 +13,10 @@ use axum::extract::connect_info::ConnectInfo;
 //allows to split the websocket stream into separate TX and RX branches
 use futures::{sink::SinkExt, stream::StreamExt};
 
-use crate::types::{RequestMethod, ResponseParams, UserId, UserNonceResult};
+use crate::types::{
+    RegisterDeviceParams, RegisterDeviceResult, RequestMethod, ResponseParams, UserId,
+    UserNonceResult,
+};
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -115,8 +118,7 @@ async fn process_message(
                 }
             };
 
-            // {"id": 1,"method": "getNonce","token": "",
-            // "params": {"user_id": "5Ebm13cUeSEFyAfC3oSwZaVuXKodbd79W8FHbXaPiG458hfJ"}}
+            // {"id": 1,"method": "getNonce","token": "","params": {"user_id": "5Ebm13cUeSEFyAfC3oSwZaVuXKodbd79W8FHbXaPiG458hfJ"}}
             if v["method"] == "getNonce" {
                 let params: UserId = match serde_json::from_value(v["params"].clone()) {
                     Ok(params) => params,
@@ -139,17 +141,40 @@ async fn process_message(
                 .unwrap();
 
                 sender.send(Message::Text(result)).await.unwrap();
-
-                // // 更新nonce
-                // if let Err(e) = db.update_nonce(&params.user_id, nonce + 1).await {
-                //     println!("##### update failed {:?}", e);
-                // };
-                // let nonce = db.get_nonce(&params.user_id).await.unwrap();
-                // sender
-                //     .send(Message::Text((nonce + 1).to_string()))
-                //     .await
-                //     .unwrap();
             }
+            // {"id":1,"method":"registerDevice","token":"","params":{"device_name":"bobo-manjaro","mac":"00:2B:67:6F:74:72"}}
+            if v["method"] == "registerDevice" {
+                let params: RegisterDeviceParams = match serde_json::from_value(v["params"].clone())
+                {
+                    Ok(params) => params,
+                    Err(e) => {
+                        println!("Unmarshal failed: {:?}", e);
+                        return ControlFlow::Continue(());
+                    }
+                };
+
+                // 获取nonce
+                let device_id = db.new_device_id().await.unwrap();
+                let result = serde_json::to_string(&ResponseParams {
+                    id: v["id"].as_u64().unwrap(),
+                    method: v["method"].as_str().unwrap().to_owned(),
+                    code: 0,
+                    result: &RegisterDeviceResult { device_id },
+                })
+                .unwrap();
+
+                sender.send(Message::Text(result)).await.unwrap();
+            }
+
+            // // 更新nonce
+            // if let Err(e) = db.update_nonce(&params.user_id, nonce + 1).await {
+            //     println!("##### update failed {:?}", e);
+            // };
+            // let nonce = db.get_nonce(&params.user_id).await.unwrap();
+            // sender
+            //     .send(Message::Text((nonce + 1).to_string()))
+            //     .await
+            //     .unwrap();
 
             println!(">>> {} sent str: {:?}", who, t);
         }

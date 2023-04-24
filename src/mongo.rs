@@ -4,12 +4,13 @@ use mongodb::{
     results::{InsertOneResult, UpdateResult},
     Client, Collection,
 };
+use rand::Rng;
 // This trait is required to use `try_next()` on the cursor
 use anyhow::anyhow;
 use futures::stream::{Collect, TryStreamExt};
 use mongodb::options::FindOptions;
 
-use crate::types::UserNonce;
+use crate::types::{DeviceInfo, UserNonce};
 
 #[derive(Clone, Debug)]
 pub struct DB {
@@ -57,6 +58,34 @@ impl DB {
             // println!("title: {}", book.title);
         }
         return Ok(0);
+    }
+
+    pub async fn new_device_id(&self) -> Result<String, anyhow::Error> {
+        for _ in 0..50 {
+            let mut rng = rand::thread_rng();
+            let num = rng.gen_range(100_000_000..1_000_000_000);
+            let exist = self.device_id_exist(&num.to_string()).await;
+            if !exist {
+                return Ok(num.to_string());
+            }
+        }
+        return Err(anyhow!("Err"));
+    }
+
+    pub async fn device_id_exist(&self, device_id: &str) -> Result<bool, anyhow::Error> {
+        let typed_collection = self
+            .client
+            .database("test")
+            .collection::<DeviceInfo>("device");
+
+        let filter = doc! {"device_id": device_id};
+        let find_options = FindOptions::builder().sort(doc! {"title":1}).build();
+
+        let result = typed_collection.find_one(filter, None).await?;
+        return match result {
+            Some(_) => Ok(true),
+            None => Ok(false),
+        };
     }
 }
 
