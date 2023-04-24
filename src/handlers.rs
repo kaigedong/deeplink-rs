@@ -2,7 +2,7 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{State, TypedHeader};
 use axum::response::IntoResponse;
 use futures::stream::{SplitSink, SplitStream};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use std::net::SocketAddr;
 use std::ops::ControlFlow;
@@ -14,8 +14,7 @@ use axum::extract::connect_info::ConnectInfo;
 use futures::{sink::SinkExt, stream::StreamExt};
 
 use crate::types::{
-    RegisterDeviceParams, RegisterDeviceResult, RequestMethod, ResponseParams, UserId,
-    UserNonceResult,
+    RegisterDeviceParams, RegisterDeviceResult, ResponseParams, UserId, UserNonceResult,
 };
 
 pub async fn ws_handler(
@@ -134,9 +133,7 @@ async fn process_message(
                     id: v["id"].as_u64().unwrap(),
                     method: v["method"].as_str().unwrap().to_owned(),
                     code: 0,
-                    result: &UserNonceResult {
-                        nonce: nonce.to_string(),
-                    },
+                    result: &UserNonceResult { nonce: nonce.to_string() },
                 })
                 .unwrap();
 

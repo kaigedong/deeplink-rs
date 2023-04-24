@@ -73,11 +73,7 @@ async fn spawn_client(who: usize) {
     let mut send_task = tokio::spawn(async move {
         for i in 1..30 {
             // In any websocket error, break loop.
-            if sender
-                .send(Message::Text(format!("Message number {}...", i)))
-                .await
-                .is_err()
-            {
+            if sender.send(Message::Text(format!("Message number {}...", i))).await.is_err() {
                 //just as with server, if send fails there is nothing we can do but exit.
                 return;
             }
@@ -131,10 +127,7 @@ fn process_message(msg: Message, who: usize) -> ControlFlow<(), ()> {
         }
         Message::Close(c) => {
             if let Some(cf) = c {
-                println!(
-                    ">>> {} got close with code {} and reason `{}`",
-                    who, cf.code, cf.reason
-                );
+                println!(">>> {} got close with code {} and reason `{}`", who, cf.code, cf.reason);
             } else {
                 println!(">>> {} somehow got close message without CloseFrame", who);
             }

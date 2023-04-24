@@ -1,13 +1,13 @@
 use mongodb::{
     bson::doc,
     options::{ClientOptions, ServerApi, ServerApiVersion},
-    results::{InsertOneResult, UpdateResult},
+    results::UpdateResult,
     Client, Collection,
 };
-use rand::Rng;
+use rand::{rngs::StdRng, Rng, SeedableRng};
 // This trait is required to use `try_next()` on the cursor
 use anyhow::anyhow;
-use futures::stream::{Collect, TryStreamExt};
+use futures::stream::TryStreamExt;
 use mongodb::options::FindOptions;
 
 use crate::types::{DeviceInfo, UserNonce};
@@ -19,9 +19,7 @@ pub struct DB {
 
 impl DB {
     pub async fn new() -> Self {
-        DB {
-            client: init_mongo().await.unwrap(),
-        }
+        DB { client: init_mongo().await.unwrap() }
     }
 
     pub async fn update_nonce(
@@ -42,10 +40,7 @@ impl DB {
 
     pub async fn get_nonce(&self, user_id: &str) -> Result<u64, anyhow::Error> {
         // Get a handle to a collection of `Book`.
-        let typed_collection = self
-            .client
-            .database("test")
-            .collection::<UserNonce>("nonce");
+        let typed_collection = self.client.database("test").collection::<UserNonce>("nonce");
 
         // Query the books in the collection with a filter and an option.
         let filter = doc! { "user_id": user_id };
@@ -62,9 +57,9 @@ impl DB {
 
     pub async fn new_device_id(&self) -> Result<String, anyhow::Error> {
         for _ in 0..50 {
-            let mut rng = rand::thread_rng();
+            let mut rng = StdRng::from_entropy();
             let num = rng.gen_range(100_000_000..1_000_000_000);
-            let exist = self.device_id_exist(&num.to_string()).await;
+            let exist = self.device_id_exist(&num.to_string()).await.unwrap();
             if !exist {
                 return Ok(num.to_string());
             }
@@ -73,14 +68,8 @@ impl DB {
     }
 
     pub async fn device_id_exist(&self, device_id: &str) -> Result<bool, anyhow::Error> {
-        let typed_collection = self
-            .client
-            .database("test")
-            .collection::<DeviceInfo>("device");
-
+        let typed_collection = self.client.database("test").collection::<DeviceInfo>("device");
         let filter = doc! {"device_id": device_id};
-        let find_options = FindOptions::builder().sort(doc! {"title":1}).build();
-
         let result = typed_collection.find_one(filter, None).await?;
         return match result {
             Some(_) => Ok(true),
@@ -99,10 +88,7 @@ pub async fn init_mongo() -> mongodb::error::Result<Client> {
     // Create a new client and connect to the server
     let client = Client::with_options(client_options)?;
     // Send a ping to confirm a successful connection
-    client
-        .database("admin")
-        .run_command(doc! {"ping": 1}, None)
-        .await?;
+    client.database("admin").run_command(doc! {"ping": 1}, None).await?;
     println!("Pinged your deployment. You successfully connected to MongoDB!");
 
     Ok(client)

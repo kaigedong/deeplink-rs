@@ -124,11 +124,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
     // Waiting for this client to finish getting its greetings does not prevent other clients from
     // connecting to server and receiving their greetings.
     for i in 1..5 {
-        if socket
-            .send(Message::Text(format!("Hi {i} times!")))
-            .await
-            .is_err()
-        {
+        if socket.send(Message::Text(format!("Hi {i} times!"))).await.is_err() {
             println!("client {who} abruptly disconnected");
             return;
         }
@@ -144,11 +140,7 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
         let n_msg = 20;
         for i in 0..n_msg {
             // In case of any websocket error, we exit.
-            if sender
-                .send(Message::Text(format!("Server message {i} ...")))
-                .await
-                .is_err()
-            {
+            if sender.send(Message::Text(format!("Server message {i} ..."))).await.is_err() {
                 return i;
             }
 
@@ -214,10 +206,7 @@ fn process_message(msg: Message, who: SocketAddr) -> ControlFlow<(), ()> {
         }
         Message::Close(c) => {
             if let Some(cf) = c {
-                println!(
-                    ">>> {} sent close with code {} and reason `{}`",
-                    who, cf.code, cf.reason
-                );
+                println!(">>> {} sent close with code {} and reason `{}`", who, cf.code, cf.reason);
             } else {
                 println!(">>> {} somehow sent close message without CloseFrame", who);
             }
