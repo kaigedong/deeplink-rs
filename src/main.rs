@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod handlers;
+mod handler;
 mod jwt;
 mod mongo;
 mod types;
@@ -17,14 +17,14 @@ async fn main() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "deeplink-rs=debug,tower_http=debug".into()),
+                .unwrap_or_else(|_| "deeplink_rs=debug,tower_http=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     let db = mongo::DB::new().await;
     let app = Router::new()
-        .route("/ws", get(handlers::ws_handler).with_state(db))
+        .route("/ws", get(handler::handlers::ws_handler).with_state(db))
         // logging so we can see whats going on
         .layer(
             TraceLayer::new_for_http()

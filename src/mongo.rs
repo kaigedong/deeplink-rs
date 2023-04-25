@@ -9,6 +9,7 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 use anyhow::anyhow;
 use futures::stream::TryStreamExt;
 use mongodb::options::FindOptions;
+use tracing::Level;
 
 use crate::{
     types::{DeviceInfo, UserNonce},
@@ -22,7 +23,13 @@ pub struct DB {
 
 impl DB {
     pub async fn new() -> Self {
-        DB { db: init_mongo().await.unwrap() }
+        match init_mongo().await {
+            Ok(db) => DB { db },
+            Err(e) => {
+                tracing::event!(Level::ERROR, "{:?}", e);
+                std::process::exit(-1);
+            }
+        }
     }
 
     pub async fn update_nonce(
@@ -114,7 +121,6 @@ pub async fn init_mongo() -> mongodb::error::Result<Database> {
     let client = Client::with_options(client_options)?;
     // Send a ping to confirm a successful connection
     client.database("admin").run_command(doc! {"ping": 1}, None).await?;
-    println!("Pinged your deployment. You successfully connected to MongoDB!");
-
+    tracing::event!(Level::DEBUG, "Pinged your deployment. Connected to MongoDB!");
     Ok(client.database("test"))
 }

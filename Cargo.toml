@@ -3,7 +3,7 @@ name = "deeplink-rs"
 version = "0.1.0"
 edition = "2021"
 publish = false
-default-run = "deeplink-server"
+default-run = "deeplink-rs"
 
 [dependencies]
 anyhow = "1.0.70"
@@ -29,5 +29,5 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [[bin]]
-name = "deeplink-server"
+name = "deeplink-rs"
 path = "src/main.rs"
