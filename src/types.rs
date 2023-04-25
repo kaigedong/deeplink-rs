@@ -1,10 +1,10 @@
-use std::fmt::Debug;
-
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::fmt::Debug;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct UserId {
+pub struct GetNonceParams {
     pub user_id: String,
 }
 
@@ -71,10 +71,18 @@ pub struct LoginResult {
 }
 
 // 服务端返回的数据类型
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct ResponseParams<T: Debug + Serialize + Serialize> {
     pub id: u64,
     pub method: String,
     pub code: i32,
     pub result: T,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RequestParams {
+    pub id: u64,
+    pub method: String,
+    pub token: String,
+    pub params: Value,
 }

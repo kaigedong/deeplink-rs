@@ -6,9 +6,9 @@ use std::net::SocketAddr;
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod db;
 mod handler;
 mod jwt;
-mod mongo;
 mod types;
 mod utils;
 
@@ -22,7 +22,7 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let db = mongo::DB::new().await;
+    let db = db::DB::new().await;
     let app = Router::new()
         .route("/ws", get(handler::handlers::ws_handler).with_state(db))
         // logging so we can see whats going on

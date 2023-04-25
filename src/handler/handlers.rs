@@ -2,21 +2,20 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{State, TypedHeader};
 use axum::response::IntoResponse;
 use futures::stream::{SplitSink, SplitStream};
-use serde_json::Value;
+use tracing::Level;
+//allows to extract the IP of connecting user
+use axum::extract::connect_info::ConnectInfo;
 
 use std::net::SocketAddr;
 use std::ops::ControlFlow;
-
-//allows to extract the IP of connecting user
-use axum::extract::connect_info::ConnectInfo;
 
 //allows to split the websocket stream into separate TX and RX branches
 use futures::{sink::SinkExt, stream::StreamExt};
 
 use crate::jwt::new_token;
 use crate::types::{
-    DeviceInfo, LoginParams, LoginResult, RegisterDeviceParams, RegisterDeviceResult,
-    ResponseParams, UserId, UserNonceResult,
+    DeviceInfo, GetNonceParams, LoginParams, LoginResult, RegisterDeviceParams,
+    RegisterDeviceResult, RequestParams, ResponseParams, UserNonceResult,
 };
 use crate::utils::{self, verify_signature};
 
@@ -24,7 +23,7 @@ pub async fn ws_handler(
     ws: WebSocketUpgrade,
     user_agent: Option<TypedHeader<headers::UserAgent>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(db): State<crate::mongo::DB>,
+    State(db): State<crate::db::DB>,
 ) -> impl IntoResponse {
     let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
         user_agent.to_string()
@@ -38,7 +37,7 @@ pub async fn ws_handler(
     ws.on_upgrade(move |socket| handle_socket(socket, addr, db))
 }
 
-async fn handle_socket(mut socket: WebSocket, who: SocketAddr, client: crate::mongo::DB) {
+async fn handle_socket(mut socket: WebSocket, who: SocketAddr, client: crate::db::DB) {
     //send a ping (unsupported by some browsers) just to kick things off and get a response
     if socket.send(Message::Ping(vec![1, 2, 3])).await.is_ok() {
         println!("Pinged {}...", who);
@@ -97,52 +96,61 @@ async fn process_message(
     who: SocketAddr,
     sender: &mut SplitSink<WebSocket, Message>,
     _receiver: &mut SplitStream<WebSocket>,
-    db: &crate::mongo::DB,
+    db: &crate::db::DB,
 ) -> ControlFlow<(), ()> {
     match msg {
         Message::Text(t) => {
             let t = t.trim();
+            println!(">>> {} sent str: {:?}", who, t);
+
             if t == "ping" {
                 if let Err(e) = sender.send(Message::Text("pong".into())).await {
-                    println!("Send message failed {:?}", e);
+                    tracing::event!(Level::ERROR, "Send message failed {:?}", e);
                 }
                 return ControlFlow::Continue(());
             }
 
-            let v: Value = match serde_json::from_str(&t) {
+            let v: RequestParams = match serde_json::from_str(&t) {
                 Ok(v) => v,
                 Err(e) => {
-                    println!("### Unmarshal json failed: {:?}", e);
+                    tracing::event!(Level::ERROR, "Unmarshal json failed: {:?}", e);
                     return ControlFlow::Continue(());
                 }
             };
 
             // {"id": 1,"method": "getNonce","token": "","params": {"user_id": "5Ebm13cUeSEFyAfC3oSwZaVuXKodbd79W8FHbXaPiG458hfJ"}}
-            if v["method"] == "getNonce" {
-                let params: UserId = match serde_json::from_value(v["params"].clone()) {
+            if &v.method == "getNonce" {
+                let params: GetNonceParams = match serde_json::from_value(v.params.clone()) {
                     Ok(params) => params,
                     Err(e) => {
-                        println!("Unmarshal failed: {:?}", e);
+                        tracing::event!(Level::ERROR, "Unmarshal failed: {:?}", e);
                         return ControlFlow::Continue(());
                     }
                 };
 
-                // 获取nonce
-                let nonce = db.get_nonce(&params.user_id).await.unwrap();
+                let nonce = match db.get_nonce(&params.user_id).await {
+                    Ok(nonce) => nonce,
+                    Err(e) => {
+                        tracing::event!(Level::ERROR, "Unmarshal failed: {:?}", e);
+                        return ControlFlow::Continue(());
+                    }
+                };
                 let result = serde_json::to_string(&ResponseParams {
-                    id: v["id"].as_u64().unwrap(),
-                    method: v["method"].as_str().unwrap().to_owned(),
+                    id: v.id,
+                    method: v.method.clone(),
                     code: 0,
                     result: &UserNonceResult { nonce: nonce.to_string() },
                 })
                 .unwrap();
 
-                sender.send(Message::Text(result)).await.unwrap();
+                if let Err(e) = sender.send(Message::Text(result)).await {
+                    tracing::event!(Level::ERROR, "Send message failed {:?}", e);
+                };
+                return ControlFlow::Continue(());
             }
             // {"id":1,"method":"registerDevice","token":"","params":{"device_name":"bobo-manjaro","mac":"00:2B:67:6F:74:72"}}
-            if v["method"] == "registerDevice" {
-                let params: RegisterDeviceParams = match serde_json::from_value(v["params"].clone())
-                {
+            if &v.method == "registerDevice" {
+                let params: RegisterDeviceParams = match serde_json::from_value(v.params.clone()) {
                     Ok(params) => params,
                     Err(e) => {
                         println!("Unmarshal failed: {:?}", e);
@@ -153,8 +161,8 @@ async fn process_message(
                 // 获取nonce
                 let device_id = db.new_device_id().await.unwrap();
                 let result = serde_json::to_string(&ResponseParams {
-                    id: v["id"].as_u64().unwrap(),
-                    method: v["method"].as_str().unwrap().to_owned(),
+                    id: v.id,
+                    method: v.method.clone(),
                     code: 0,
                     result: &RegisterDeviceResult { device_id: device_id.clone() },
                 })
@@ -175,12 +183,13 @@ async fn process_message(
                 };
 
                 sender.send(Message::Text(result)).await.unwrap();
+                return ControlFlow::Continue(());
             }
             // {"id":1,"method":"login","token":"",
             // "params":{"user_id":"5Ebm13cUeSEFyAfC3oSwZaVuXKodbd79W8FHbXaPiG458hfJ","device_id":"684060212","nonce":1,
             // "signature":"0xc46eee1875fd3a2ac7f4877080e17ecea2ab66f51bdaa1581acf92ca65323f5f415314242d5513c070ef7fbd78593c0a9116fdeb6288ff28d67a503f7e23bf84"}}
-            if v["method"] == "login" {
-                let params: LoginParams = match serde_json::from_value(v["params"].clone()) {
+            if &v.method == "login" {
+                let params: LoginParams = match serde_json::from_value(v.params.clone()) {
                     Ok(params) => params,
                     Err(e) => {
                         println!("Unmarshal failed: {:?}", e);
@@ -217,26 +226,15 @@ async fn process_message(
                 };
 
                 let result = serde_json::to_string(&ResponseParams {
-                    id: v["id"].as_u64().unwrap(),
-                    method: v["method"].as_str().unwrap().to_owned(),
+                    id: v.id,
+                    method: v.method.as_str().to_owned(),
                     code: 0,
                     result: &LoginResult { token },
                 })
                 .unwrap();
                 sender.send(Message::Text(result)).await.unwrap();
+                return ControlFlow::Continue(());
             }
-
-            // // 更新nonce
-            // if let Err(e) = db.update_nonce(&params.user_id, nonce + 1).await {
-            //     println!("##### update failed {:?}", e);
-            // };
-            // let nonce = db.get_nonce(&params.user_id).await.unwrap();
-            // sender
-            //     .send(Message::Text((nonce + 1).to_string()))
-            //     .await
-            //     .unwrap();
-
-            println!(">>> {} sent str: {:?}", who, t);
         }
         _ => {
             println!("Not allowed message {:?}", msg);
