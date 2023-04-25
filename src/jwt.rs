@@ -17,6 +17,9 @@ pub struct Claims {
     // Required. Expiration time (as UTC timestamp)
     pub exp: usize,
 }
+pub fn verify_token(token: &str) -> bool {
+    true
+}
 
 pub fn new_token(user_id: String, device_id: String) -> String {
     // skip login validation: 如果用户正确传入email & passed，将为该用户生成一个Token

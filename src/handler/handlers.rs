@@ -248,6 +248,34 @@ async fn process_message(
                 };
                 return ControlFlow::Continue(());
             }
+
+            // {"id":1,"method":"imOnline",
+            // "token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJVc2VySWQiOiI1RWJtMTNjVWVTRUZ5QWZDM29Td1phVnVYS29kYmQ3OVc4RkhiWGFQaUc0NThoZkoiLCJEZXZpY2VJZCI6IjQ1NTEwNjg5OCIsImlzcyI6ImRlZXBsaW5rIiwic3ViIjoiVXNlciB0b2tlbiIsImV4cCI6MTcxNzIwMDk0NywiaWF0IjoxNjgxMjAwOTQ3fQ.EdldPibkgZuoBplCPp00YeHUZQwuL1sje90Ee5Obods",
+            // "params":{"device_id":"684060212"}}
+            if &v.method == "imOnline" {
+                // TODO: 1. verify token
+                // 2. 更新设备Online状态
+                // return {"id":1,"method":"imOnline","code":0,"result":{"message":"Ok"}}
+            }
+
+            // 绑定设备
+            // {"id":1,"method":"bindDevice",
+            // "token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJVc2VySWQiOiI1RWJtMTNjVWVTRUZ5QWZDM29Td1phVnVYS29kYmQ3OVc4RkhiWGFQaUc0NThoZkoiLCJEZXZpY2VJZCI6IjQ1NTEwNjg5OCIsImlzcyI6ImRlZXBsaW5rIiwic3ViIjoiVXNlciB0b2tlbiIsImV4cCI6MTcxNzIwMDk0NywiaWF0IjoxNjgxMjAwOTQ3fQ.EdldPibkgZuoBplCPp00YeHUZQwuL1sje90Ee5Obods",
+            // "params":{"device_id":"684060212","device_name":"boob-manjaro"}}
+            if &v.method == "bindDevice" {}
+
+            // # 解绑设备
+            // {"id":1,"method":"unbindDevice",
+            // "token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJVc2VySWQiOiI1RWJtMTNjVWVTRUZ5QWZDM29Td1phVnVYS29kYmQ3OVc4RkhiWGFQaUc0NThoZkoiLCJEZXZpY2VJZCI6IjQ1NTEwNjg5OCIsImlzcyI6ImRlZXBsaW5rIiwic3ViIjoiVXNlciB0b2tlbiIsImV4cCI6MTcxNzIwMDk0NywiaWF0IjoxNjgxMjAwOTQ3fQ.EdldPibkgZuoBplCPp00YeHUZQwuL1sje90Ee5Obods",
+            // "params":{"device_id":"684060212"}}
+            if &v.method == "unbindDevice" {}
+
+            // # 获取设备列表
+            // {"id":1,"method":"getDeviceList",
+            // "token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJVc2VySWQiOiI1RWJtMTNjVWVTRUZ5QWZDM29Td1phVnVYS29kYmQ3OVc4RkhiWGFQaUc0NThoZkoiLCJEZXZpY2VJZCI6IjQ1NTEwNjg5OCIsImlzcyI6ImRlZXBsaW5rIiwic3ViIjoiVXNlciB0b2tlbiIsImV4cCI6MTcxNzIwMDk0NywiaWF0IjoxNjgxMjAwOTQ3fQ.EdldPibkgZuoBplCPp00YeHUZQwuL1sje90Ee5Obods",
+            // "params":{}}
+            // {"id":1,"method":"getDeviceList","code":0,"result":{"device_list":[{"device_id":"684060212","device_name":"boob-manjaro","mac":"00:2B:67:6F:74:72","online":false,"add_time":"2023-04-13T10:04:49.19Z","update_time":"2023-04-13T10:05:32.34Z"}]}}
+            if &v.method == "getDeviceList" {}
         }
         _ => {
             tracing::event!(Level::WARN, "Not allowed message: {:?}", msg);
