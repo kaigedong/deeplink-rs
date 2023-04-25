@@ -52,11 +52,8 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, client: crate::mo
     // By splitting socket we can send and receive at the same time.
     let (mut sender, mut receiver) = socket.split();
 
-    println!("###### Hook1");
-
     // This second task will receive messages from client and print them on server console
     let mut recv_task = tokio::spawn(async move {
-        println!("###### Hook2");
         let mut cnt = 0;
         loop {
             tokio::select! {

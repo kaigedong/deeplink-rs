@@ -3,7 +3,7 @@ use axum::extract::{FromRequestParts, TypedHeader};
 use axum::headers::{authorization::Bearer, Authorization};
 use axum::http::request::Parts;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::IntoResponse;
 use jsonwebtoken as jwt;
 use jwt::Validation;
 use serde::{Deserialize, Serialize};
@@ -12,18 +12,18 @@ const SECRET: &[u8] = b"deadbeef";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub id: usize,
+    pub user_id: String,
+    pub device_id: String,
     // Required. Expiration time (as UTC timestamp)
     pub exp: usize,
-    pub name: String,
 }
 
 pub fn new_token(user_id: String, device_id: String) -> String {
     // skip login validation: 如果用户正确传入email & passed，将为该用户生成一个Token
     let claims = Claims {
-        id: 1,
+        user_id,
+        device_id,
         exp: get_epoch() + 14 * 24 * 60 * 60, // 14天后过期
-        name: "Kaige Dong".to_string(),
     };
     let key = jwt::EncodingKey::from_secret(SECRET);
     let token = jwt::encode(&jwt::Header::default(), &claims, &key).unwrap();
