@@ -13,10 +13,12 @@ use axum::extract::connect_info::ConnectInfo;
 //allows to split the websocket stream into separate TX and RX branches
 use futures::{sink::SinkExt, stream::StreamExt};
 
+use crate::jwt::new_token;
 use crate::types::{
-    DeviceInfo, RegisterDeviceParams, RegisterDeviceResult, ResponseParams, UserId, UserNonceResult,
+    DeviceInfo, LoginParams, LoginResult, RegisterDeviceParams, RegisterDeviceResult,
+    ResponseParams, UserId, UserNonceResult,
 };
-use crate::utils;
+use crate::utils::{self, verify_signature};
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -175,6 +177,55 @@ async fn process_message(
                     println!("######### update device failed")
                 };
 
+                sender.send(Message::Text(result)).await.unwrap();
+            }
+            // {"id":1,"method":"login","token":"",
+            // "params":{"user_id":"5Ebm13cUeSEFyAfC3oSwZaVuXKodbd79W8FHbXaPiG458hfJ","device_id":"684060212","nonce":1,
+            // "signature":"0xc46eee1875fd3a2ac7f4877080e17ecea2ab66f51bdaa1581acf92ca65323f5f415314242d5513c070ef7fbd78593c0a9116fdeb6288ff28d67a503f7e23bf84"}}
+            if v["method"] == "login" {
+                let params: LoginParams = match serde_json::from_value(v["params"].clone()) {
+                    Ok(params) => params,
+                    Err(e) => {
+                        println!("Unmarshal failed: {:?}", e);
+                        return ControlFlow::Continue(());
+                    }
+                };
+                // 获取并检查nonce
+                let nonce = db.get_nonce(&params.user_id).await.unwrap();
+                if params.nonce <= nonce {
+                    println!();
+                    return ControlFlow::Continue(());
+                }
+                // 检查签名
+                match verify_signature(
+                    &params.user_id,
+                    &params.nonce.to_string(),
+                    &params.signature,
+                ) {
+                    Err(e) => {
+                        return ControlFlow::Continue(());
+                    }
+                    Ok(true) => {}
+                    Ok(false) => {
+                        return ControlFlow::Continue(());
+                    }
+                }
+
+                // TODO: 生成Token
+                let token = new_token(params.user_id.clone(), params.device_id.clone());
+
+                // 更新nonce
+                if let Err(e) = db.update_nonce(&params.user_id, params.nonce).await {
+                    println!("##### update failed {:?}", e);
+                };
+
+                let result = serde_json::to_string(&ResponseParams {
+                    id: v["id"].as_u64().unwrap(),
+                    method: v["method"].as_str().unwrap().to_owned(),
+                    code: 0,
+                    result: &LoginResult { token },
+                })
+                .unwrap();
                 sender.send(Message::Text(result)).await.unwrap();
             }
 

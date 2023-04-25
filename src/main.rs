@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod handlers;
+mod jwt;
 mod mongo;
 mod types;
 mod utils;
