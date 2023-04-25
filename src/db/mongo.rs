@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Error, Result};
-use mongodb::options::FindOptions;
 use mongodb::{
     bson::doc,
     options::{ClientOptions, ServerApi, ServerApiVersion, UpdateOptions},
@@ -77,11 +76,7 @@ impl DB {
 
     pub async fn get_nonce(&self, user_id: &str) -> Result<u64, Error> {
         let typed_collection = self.db.collection::<UserNonce>("nonce");
-
-        // Query the books in the collection with a filter and an option.
         let filter = doc! { "user_id": user_id };
-        let find_options = FindOptions::builder().sort(doc! { "title": 1 }).build();
-
         let result = typed_collection.find_one(filter, None).await.map_err(|e| anyhow!(e))?;
         match result {
             Some(nonce) => Ok(nonce.nonce.parse::<u64>()?),

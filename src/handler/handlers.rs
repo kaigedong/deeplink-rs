@@ -118,7 +118,6 @@ async fn process_message(
                 }
             };
 
-            // {"id": 1,"method": "getNonce","token": "","params": {"user_id": "5Ebm13cUeSEFyAfC3oSwZaVuXKodbd79W8FHbXaPiG458hfJ"}}
             if &v.method == "getNonce" {
                 let params: GetNonceParams = match serde_json::from_value(v.params.clone()) {
                     Ok(params) => params,
@@ -148,7 +147,6 @@ async fn process_message(
                 };
                 return ControlFlow::Continue(());
             }
-            // {"id":1,"method":"registerDevice","token":"","params":{"device_name":"bobo-manjaro","mac":"00:2B:67:6F:74:72"}}
             if &v.method == "registerDevice" {
                 let params: RegisterDeviceParams = match serde_json::from_value(v.params.clone()) {
                     Ok(params) => params,
@@ -159,7 +157,13 @@ async fn process_message(
                 };
 
                 // 获取nonce
-                let device_id = db.new_device_id().await.unwrap();
+                let device_id = match db.new_device_id().await {
+                    Ok(device_id) => device_id,
+                    Err(e) => {
+                        tracing::event!(Level::ERROR, "Get new deviceId failed: {:?}", e);
+                        return ControlFlow::Continue(());
+                    }
+                };
                 let result = serde_json::to_string(&ResponseParams {
                     id: v.id,
                     method: v.method.clone(),
@@ -168,7 +172,7 @@ async fn process_message(
                 })
                 .unwrap();
 
-                if let Err(_) = db
+                if let Err(e) = db
                     .update_device(DeviceInfo {
                         device_id,
                         device_name: params.device_name,
@@ -179,27 +183,31 @@ async fn process_message(
                     })
                     .await
                 {
-                    println!("######### update device failed")
+                    tracing::event!(Level::ERROR, "Unmarshal failed: {:?}", e);
+                    return ControlFlow::Continue(());
                 };
 
                 sender.send(Message::Text(result)).await.unwrap();
                 return ControlFlow::Continue(());
             }
-            // {"id":1,"method":"login","token":"",
-            // "params":{"user_id":"5Ebm13cUeSEFyAfC3oSwZaVuXKodbd79W8FHbXaPiG458hfJ","device_id":"684060212","nonce":1,
-            // "signature":"0xc46eee1875fd3a2ac7f4877080e17ecea2ab66f51bdaa1581acf92ca65323f5f415314242d5513c070ef7fbd78593c0a9116fdeb6288ff28d67a503f7e23bf84"}}
             if &v.method == "login" {
                 let params: LoginParams = match serde_json::from_value(v.params.clone()) {
                     Ok(params) => params,
                     Err(e) => {
-                        println!("Unmarshal failed: {:?}", e);
+                        tracing::event!(Level::ERROR, "Unmarshal failed: {:?}", e);
                         return ControlFlow::Continue(());
                     }
                 };
                 // 获取并检查nonce
-                let nonce = db.get_nonce(&params.user_id).await.unwrap();
+                let nonce = match db.get_nonce(&params.user_id).await {
+                    Ok(nonce) => nonce,
+                    Err(e) => {
+                        tracing::event!(Level::ERROR, "GetNonce failed: {:?}", e);
+                        return ControlFlow::Continue(());
+                    }
+                };
                 if params.nonce <= nonce {
-                    println!();
+                    tracing::event!(Level::ERROR, "Invalid nonce");
                     return ControlFlow::Continue(());
                 }
                 // 检查签名
@@ -209,20 +217,22 @@ async fn process_message(
                     &params.signature,
                 ) {
                     Err(e) => {
+                        tracing::event!(Level::ERROR, "Verify signature failed: {:?}", e);
+                        return ControlFlow::Continue(());
+                    }
+                    Ok(false) => {
+                        tracing::event!(Level::ERROR, "Verify signature failed: invalid signature");
                         return ControlFlow::Continue(());
                     }
                     Ok(true) => {}
-                    Ok(false) => {
-                        return ControlFlow::Continue(());
-                    }
                 }
 
-                // TODO: 生成Token
                 let token = new_token(params.user_id.clone(), params.device_id.clone());
 
                 // 更新nonce
                 if let Err(e) = db.update_nonce(&params.user_id, params.nonce).await {
-                    println!("##### update failed {:?}", e);
+                    tracing::event!(Level::ERROR, "Update nonce failed: {:?}", e);
+                    return ControlFlow::Continue(());
                 };
 
                 let result = serde_json::to_string(&ResponseParams {
@@ -232,12 +242,15 @@ async fn process_message(
                     result: &LoginResult { token },
                 })
                 .unwrap();
-                sender.send(Message::Text(result)).await.unwrap();
+
+                if let Err(e) = sender.send(Message::Text(result)).await {
+                    tracing::event!(Level::ERROR, "Send message failed {:?}", e);
+                };
                 return ControlFlow::Continue(());
             }
         }
         _ => {
-            println!("Not allowed message {:?}", msg);
+            tracing::event!(Level::WARN, "Not allowed message: {:?}", msg);
         }
     }
     ControlFlow::Continue(())
